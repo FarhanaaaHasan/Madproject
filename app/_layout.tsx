@@ -1,12 +1,15 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Slot } from 'expo-router';
+import { Slot, usePathname, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import 'react-native-reanimated';
 
+import { BottomNav } from '@/components/bottom-nav';
 import Sidebar from '@/components/sidebar';
+import { StatusBar as AppStatusBar } from '@/components/status-bar';
 
+import { AuthProvider, useAuth } from '@/hooks/use-auth';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -14,13 +17,14 @@ export const unstable_settings = {
   anchor: '(tabs)',
 };
 
-export default function RootLayout() {
+function AppContent() {
   const colorScheme = useColorScheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <SafeAreaView style={{ flex: 1 }}>
+        <AppStatusBar />
         <View style={styles.container}>
           {sidebarOpen && (
             <View style={styles.sidebarWrapper}>
@@ -37,11 +41,77 @@ export default function RootLayout() {
             </View>
 
             <Slot />
+
+            <BottomNav />
           </View>
         </View>
       </SafeAreaView>
       <StatusBar style="auto" />
     </ThemeProvider>
+  );
+}
+
+function AuthCheck() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  const pathname = usePathname() || '';
+  const isAuthRoute = pathname.includes('/login') || pathname.includes('/signup');
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user && !isAuthRoute) {
+      if (!pathname.includes('/login')) {
+        router.replace('/login');
+      }
+      return;
+    }
+    if (user && isAuthRoute) {
+      router.replace('/');
+    }
+  }, [user, loading, router, isAuthRoute, pathname]);
+
+  const LoadingView = () => (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+      <ActivityIndicator size="large" color="#f06292" />
+    </View>
+  );
+
+  if (loading) {
+    return <LoadingView />;
+  }
+
+  // If user is logged in, show the app
+  if (user) {
+    return <AppContent />;
+  }
+
+  // If no user and on auth route, show login/signup pages
+  if (isAuthRoute) {
+    return (
+      <ThemeProvider value={DefaultTheme}>
+        <SafeAreaView style={{ flex: 1 }}>
+          <Slot />
+          <StatusBar style="auto" />
+        </SafeAreaView>
+      </ThemeProvider>
+    );
+  }
+
+  // If no user and NOT on auth route, redirect to login and show loading
+  if (pathname !== '/login') {
+    router.replace('/login');
+  }
+  return <LoadingView />;
+
+}
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <ThemeProvider value={DefaultTheme}>
+        <AuthCheck />
+      </ThemeProvider>
+    </AuthProvider>
   );
 }
 

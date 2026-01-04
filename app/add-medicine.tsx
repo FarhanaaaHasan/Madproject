@@ -1,10 +1,13 @@
+import SuccessModal from '@/components/success-modal';
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useAuth } from '@/hooks/use-auth';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { medicationService } from '@/lib/medication-service';
 
 const frequencies = ['Daily', 'Weekly', 'Monthly'];
 const times = ['Before Breakfast', 'After Breakfast', 'Before Lunch', 'After Dinner'];
@@ -13,6 +16,8 @@ const pillTypes = ['Tablet', 'Capsule', 'Syrup', 'Drop'];
 export default function AddMedicineScreen() {
   const accent = useThemeColor({ light: '#f06292', dark: '#f8a2c1' }, 'tint');
   const cardBg = useThemeColor({ light: '#fdf5f9', dark: '#111' }, 'background');
+  const { user } = useAuth();
+  
   const [selectedFreq, setSelectedFreq] = useState('Daily');
   const [selectedMeal, setSelectedMeal] = useState('After Dinner');
   const [selectedType, setSelectedType] = useState('Tablet');
@@ -20,6 +25,9 @@ export default function AddMedicineScreen() {
   const [dosage, setDosage] = useState('');
   const [duration, setDuration] = useState('');
   const [timesSelected, setTimesSelected] = useState<string[]>(['8:00 AM', '5:00 PM']);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  
   const nextTimeLabel = useMemo(() => `${7 + timesSelected.length}:00 AM`, [timesSelected.length]);
 
   const toggleTime = (label: string) => {
@@ -33,7 +41,7 @@ export default function AddMedicineScreen() {
     setTimesSelected((prev) => [...prev, nextTimeLabel]);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!medicineName.trim()) {
       Alert.alert('Missing name', 'Please enter the medicine name.');
       return;
@@ -47,17 +55,41 @@ export default function AddMedicineScreen() {
       return;
     }
 
-    const payload = {
-      medicineName,
-      dosage,
-      duration,
-      type: selectedType,
-      meal: selectedMeal,
-      frequency: selectedFreq,
-      notificationTimes: timesSelected,
-    };
+    if (!user?.uid) {
+      Alert.alert('Error', 'You must be logged in to add medications.');
+      return;
+    }
 
-    Alert.alert('Saved', `Ready to schedule:\n${JSON.stringify(payload, null, 2)}`);
+    setIsLoading(true);
+    try {
+      await medicationService.addMedication({
+        userId: user.uid,
+        name: medicineName.trim(),
+        type: selectedType,
+        dosage: dosage.trim(),
+        duration: duration.trim() || 'Ongoing',
+        frequency: selectedFreq,
+        mealTiming: selectedMeal,
+        notificationTimes: timesSelected,
+      });
+      
+      console.log('[AddMedicine] Successfully saved medication');
+      setShowSuccess(true);
+      
+      // Reset form
+      setMedicineName('');
+      setDosage('');
+      setDuration('');
+      setTimesSelected(['8:00 AM', '5:00 PM']);
+      setSelectedType('Tablet');
+      setSelectedFreq('Daily');
+      setSelectedMeal('After Dinner');
+    } catch (error) {
+      console.error('[AddMedicine] Error saving medication:', error);
+      Alert.alert('Error', 'Failed to save medication. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -218,9 +250,19 @@ export default function AddMedicineScreen() {
           </View>
         </ThemedView>
 
-        <Pressable style={[styles.primaryButton, { backgroundColor: accent }]} onPress={handleSave}>
-          <ThemedText style={styles.primaryButtonText}>Save medicine</ThemedText>
+        <Pressable 
+          style={[styles.primaryButton, { backgroundColor: accent, opacity: isLoading ? 0.7 : 1 }]} 
+          onPress={handleSave}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <ThemedText style={styles.primaryButtonText}>Save medicine</ThemedText>
+          )}
         </Pressable>
+
+        <SuccessModal visible={showSuccess} onClose={() => setShowSuccess(false)} backTo="/" />
       </ScrollView>
     </ThemedView>
   );

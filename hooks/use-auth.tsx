@@ -1,10 +1,18 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { auth } from '@/config/firebase';
+import {
+  createUserWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  updateProfile,
+} from 'firebase/auth';
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 
 type User = { uid: string; email: string | null; name?: string | null };
 
 type AuthContextValue = {
   user: User | null;
+  loading: boolean;
   signIn: (params: { email: string; password: string }) => Promise<void>;
   signUp: (params: { email: string; password: string; name?: string }) => Promise<void>;
   signOut: () => Promise<void>;
@@ -12,89 +20,88 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-// Simple in-memory storage for mock users. Backed by AsyncStorage so accounts
-// survive app reloads in development.
-const STORAGE_USERS_KEY = 'medexa:mockUsers';
-const STORAGE_CURRENT_USER = 'medexa:currentUser';
-
-const mockUsers: Map<string, { email: string; password: string; name?: string; uid: string }> = new Map();
-
 export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Load persisted users and current session on mount
+  // Listen to auth state changes
   useEffect(() => {
-    (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_USERS_KEY);
-        if (raw) {
-          const parsed: { email: string; password: string; name?: string; uid: string }[] = JSON.parse(raw);
-          parsed.forEach((u) => mockUsers.set(u.email.toLowerCase(), u));
+    console.log('[use-auth] Setting up auth listener');
+    const unsubscribe = onAuthStateChanged(
+      auth, 
+      (firebaseUser) => {
+        console.log('[use-auth] Auth state changed:', firebaseUser ? 'User logged in' : 'No user');
+        if (firebaseUser) {
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: firebaseUser.displayName,
+          });
+        } else {
+          setUser(null);
         }
-        const cur = await AsyncStorage.getItem(STORAGE_CURRENT_USER);
-        if (cur) {
-          const curObj = JSON.parse(cur);
-          setUser(curObj);
-        }
-      } catch (e) {
-        console.warn('Failed to load persisted auth data', e);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('[use-auth] Auth state error:', error);
+        setLoading(false);
       }
-    })();
+    );
+
+    return () => unsubscribe();
   }, []);
 
-  // Using simple in-memory mock auth (no external connections)
-
   const signIn = async ({ email, password }: { email: string; password: string }) => {
-    // In-memory mock: validate credentials against stored users
-    const stored = mockUsers.get(email.toLowerCase());
-    if (!stored || stored.password !== password) {
-      const err: any = new Error('Invalid email or password');
-      err.code = 'auth/invalid-credential';
-      throw err;
-    }
-    const newUser = { uid: stored.uid, email: stored.email, name: stored.name ?? null };
-    setUser(newUser);
     try {
-      await AsyncStorage.setItem(STORAGE_CURRENT_USER, JSON.stringify(newUser));
-    } catch (e) {
-      console.warn('Failed to persist current user', e);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+      setUser({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        name: firebaseUser.displayName,
+      });
+    } catch (error: any) {
+      console.error('Sign in error:', error);
+      throw error;
     }
   };
 
   const signUp = async ({ email, password, name }: { email: string; password: string; name?: string }) => {
-    // In-memory mock: check for duplicate email
-    if (mockUsers.has(email.toLowerCase())) {
-      const err: any = new Error('Email already in use');
-      err.code = 'auth/email-already-in-use';
-      throw err;
-    }
-    // Create new user in memory
-    const uid = `user_${Date.now()}`;
-    mockUsers.set(email.toLowerCase(), { email, password, name, uid });
-    const newUser = { uid, email, name: name ?? null };
-    setUser(newUser);
     try {
-      const arr = Array.from(mockUsers.values());
-      await AsyncStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(arr));
-      await AsyncStorage.setItem(STORAGE_CURRENT_USER, JSON.stringify(newUser));
-    } catch (e) {
-      console.warn('Failed to persist new user', e);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+
+      // Update profile with display name if provided
+      if (name) {
+        await updateProfile(firebaseUser, { displayName: name });
+      }
+
+      // Update local state
+      setUser({
+        uid: firebaseUser.uid,
+        email: firebaseUser.email,
+        name: name || null,
+      });
+      console.log('[use-auth] User registered:', { email, name });
+    } catch (error: any) {
+      console.error('Sign up error:', error);
+      throw error;
     }
-    console.log('[use-auth] User registered:', { email, name });
   };
 
   const signOut = async () => {
-    setUser(null);
     try {
-      await AsyncStorage.removeItem(STORAGE_CURRENT_USER);
-    } catch (e) {
-      console.warn('Failed to clear current user', e);
+      await firebaseSignOut(auth);
+      setUser(null);
+    } catch (error: any) {
+      console.error('Sign out error:', error);
+      throw error;
     }
   };
 
   const value = useMemo(
-    () => ({ user, signIn, signUp, signOut }),
-    [user]
+    () => ({ user, loading, signIn, signUp, signOut }),
+    [user, loading]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -102,49 +109,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  if (ctx) return ctx;
-
-  // Fallback when no AuthProvider is mounted — provide a minimal local-only
-  // implementation so pages/components that call `useAuth()` won't crash.
-  return {
-    user: null,
-    signIn: async ({ email, password }: { email: string; password: string }) => {
-      const stored = mockUsers.get(email.toLowerCase());
-      if (!stored || stored.password !== password) {
-        const err: any = new Error('Invalid email or password');
-        err.code = 'auth/invalid-credential';
-        throw err;
-      }
-      const newUser = { uid: stored.uid, email: stored.email, name: stored.name ?? null };
-      try {
-        await AsyncStorage.setItem(STORAGE_CURRENT_USER, JSON.stringify(newUser));
-      } catch (e) {
-        console.warn('Failed to persist current user', e);
-      }
-    },
-    signUp: async ({ email, password, name }: { email: string; password: string; name?: string }) => {
-      if (mockUsers.has(email.toLowerCase())) {
-        const err: any = new Error('Email already in use');
-        err.code = 'auth/email-already-in-use';
-        throw err;
-      }
-      const uid = `user_${Date.now()}`;
-      mockUsers.set(email.toLowerCase(), { email, password, name, uid });
-      const newUser = { uid, email, name: name ?? null };
-      try {
-        const arr = Array.from(mockUsers.values());
-        await AsyncStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(arr));
-        await AsyncStorage.setItem(STORAGE_CURRENT_USER, JSON.stringify(newUser));
-      } catch (e) {
-        console.warn('Failed to persist new user', e);
-      }
-    },
-    signOut: async () => {
-      try {
-        await AsyncStorage.removeItem(STORAGE_CURRENT_USER);
-      } catch (e) {
-        console.warn('Failed to clear current user', e);
-      }
-    },
-  } as AuthContextValue;
+  if (!ctx) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return ctx;
 }

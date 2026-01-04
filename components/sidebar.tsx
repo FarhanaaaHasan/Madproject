@@ -2,14 +2,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useAuth } from '@/hooks/use-auth';
+
 type Props = {
   onClose?: () => void;
 };
 
 export default function Sidebar({ onClose }: Props) {
   const router = useRouter();
-  // Auth removed — show guest info and perform simple navigation on logout
-  const user = null;
+  // Auth removed - show guest info and perform simple navigation on logout
+  const { user, signOut } = useAuth();
 
   const nav = (path: string) => {
     onClose?.();
@@ -66,8 +68,9 @@ export default function Sidebar({ onClose }: Props) {
 
         <Pressable
           style={styles.item}
-          onPress={() => {
+          onPress={async () => {
             onClose?.();
+            await signOut();
             router.replace('/login');
           }}>
           <Ionicons name="log-out-outline" size={20} color="#333" />

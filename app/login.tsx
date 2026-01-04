@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -16,19 +16,54 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const { signIn } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const { signIn, user, loading: authLoading } = useAuth();
+  const busy = loading || authLoading;
+
+  // Redirect to home if already logged in
+  useEffect(() => {
+    if (user && !authLoading) {
+      router.replace('/');
+    }
+  }, [user, authLoading, router]);
+
+  const getErrorMessage = (code: string): string => {
+    const errorMap: { [key: string]: string } = {
+      'auth/user-not-found': 'No account found with this email',
+      'auth/wrong-password': 'Incorrect password',
+      'auth/invalid-password': 'Incorrect password',
+      'auth/invalid-credential': 'Invalid email or password',
+      'auth/user-disabled': 'This account has been disabled',
+      'auth/too-many-requests': 'Too many login attempts. Please try again later',
+      'auth/invalid-email': 'Invalid email format',
+      'auth/missing-password': 'Please enter your password',
+    };
+    return errorMap[code] || (typeof code === 'string' ? code : 'Login failed. Please try again');
+  };
 
   const handleLogin = async () => {
-    const safeEmail = email.trim() || 'demo@medexa.com';
-    const safePass = password.trim() || 'demo123';
+    // Validation
+    if (!email.trim()) {
+      setError('Please enter your email');
+      return;
+    }
+    if (!password.trim()) {
+      setError('Please enter your password');
+      return;
+    }
+
     setError(null);
+    setLoading(true);
     try {
-      await signIn({ email: safeEmail, password: safePass });
+      await signIn({ email: email.trim(), password: password.trim() });
       router.replace('/');
     } catch (e: any) {
       console.warn('Login error', e);
-      const msg = e?.message || e?.code || 'Login failed';
-      setError(String(msg));
+      const errorCode = e?.code || 'unknown';
+      const errorMsg = getErrorMessage(errorCode);
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -58,6 +93,7 @@ export default function LoginScreen() {
               placeholderTextColor="#9aa"
               keyboardType="email-address"
               autoCapitalize="none"
+              editable={!busy}
               value={email}
               onChangeText={setEmail}
             />
@@ -69,20 +105,32 @@ export default function LoginScreen() {
               placeholder="Password"
               placeholderTextColor="#9aa"
               secureTextEntry
+              editable={!busy}
               value={password}
               onChangeText={setPassword}
             />
-            <Pressable>
+            <Pressable disabled={busy}>
               <ThemedText style={styles.helper}>Forgot?</ThemedText>
             </Pressable>
           </View>
 
-          <Pressable style={[styles.primaryButton, { backgroundColor: accent }]} onPress={handleLogin}>
-            <ThemedText style={styles.primaryButtonText}>Log in</ThemedText>
+          <Pressable
+            style={[styles.primaryButton, { backgroundColor: accent, opacity: busy ? 0.7 : 1 }]}
+            onPress={handleLogin}
+            disabled={busy}
+          >
+            {busy ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <ThemedText style={styles.primaryButtonText}>Log in</ThemedText>
+            )}
           </Pressable>
 
           {error ? (
-            <ThemedText style={{ color: '#d9534f', marginTop: 8 }}>{error}</ThemedText>
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle" size={16} color="#d9534f" />
+              <ThemedText style={styles.errorText}>{error}</ThemedText>
+            </View>
           ) : null}
 
           <View style={styles.divider}>
@@ -93,14 +141,14 @@ export default function LoginScreen() {
 
           <View style={styles.socialRow}>
             {['logo-google', 'logo-apple', 'logo-facebook'].map((icon) => (
-              <Pressable key={icon} style={styles.socialButton}>
+              <Pressable key={icon} style={styles.socialButton} disabled={busy}>
                 <Ionicons name={icon as any} size={18} color="#2b3a42" />
               </Pressable>
             ))}
           </View>
         </ThemedView>
 
-        <Pressable onPress={() => router.push('/signup')} style={styles.switchRow}>
+        <Pressable onPress={() => router.push('/signup')} disabled={busy} style={styles.switchRow}>
           <ThemedText style={styles.helper}>New to Medexa? </ThemedText>
           <ThemedText type="defaultSemiBold" style={{ color: accent }}>
             Create account
@@ -197,6 +245,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 16,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#f8d7da',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: '#d9534f',
+    flex: 1,
+    fontSize: 14,
   },
   divider: {
     flexDirection: 'row',
