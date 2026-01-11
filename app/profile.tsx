@@ -1,148 +1,258 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TopHeader } from '@/components/top-header';
 import { useAuth } from '@/hooks/use-auth';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { profileService } from '@/lib/profile-service';
 
 export default function ProfileScreen() {
   const accent = useThemeColor({ light: '#f06292', dark: '#f8a2c1' }, 'tint');
   const router = useRouter();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [name, setName] = useState('Medexa User');
-  const [email, setEmail] = useState('user@medexa.com');
-  const [phone, setPhone] = useState('+1 (555) 000-0000');
-  const [age, setAge] = useState('35');
-  const [bloodType, setBloodType] = useState('O+');
-  const [allergies, setAllergies] = useState('None');
-  const [emergencyContact, setEmergencyContact] = useState('John Doe - 555-1234');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [age, setAge] = useState('');
+  const [bloodType, setBloodType] = useState('');
+  const [allergies, setAllergies] = useState('');
+  const [emergencyContact, setEmergencyContact] = useState('');
 
-  const handleSave = () => {
-    setIsEditing(false);
+  const loadProfile = useCallback(async () => {
+    if (!user?.id) return;
+    
+    setIsLoading(true);
+    try {
+      const profile = await profileService.getProfile(user.id);
+      if (profile) {
+        setName(profile.name);
+        setEmail(profile.email);
+        setPhone(profile.phone);
+        setAge(profile.age);
+        setBloodType(profile.bloodType);
+        setAllergies(profile.allergies);
+        setEmergencyContact(profile.emergencyContact);
+        console.log('[Profile] Loaded user profile from Firestore');
+      } else {
+        // Set defaults from user auth if no profile exists
+        setEmail(user.email || '');
+        setName(user.name || 'Medexa User');
+        console.log('[Profile] No profile found, using auth data');
+      }
+    } catch (error) {
+      console.error('[Profile] Error loading profile:', error);
+      Alert.alert('Error', 'Failed to load profile');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  // Load profile data when component mounts
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const handleSave = async () => {
+    if (!user?.id) {
+      Alert.alert('Error', 'You must be logged in to save profile');
+      return;
+    }
+
+    // Validation
+    if (!name.trim()) {
+      Alert.alert('Error', 'Please enter your name');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      console.log('[Profile] Saving profile with data:', {
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        age: age.trim(),
+        bloodType: bloodType.trim(),
+        allergies: allergies.trim(),
+        emergencyContact: emergencyContact.trim(),
+      });
+
+      await profileService.saveProfile({
+        userId: user.id,
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        age: age.trim(),
+        bloodType: bloodType.trim(),
+        allergies: allergies.trim(),
+        emergencyContact: emergencyContact.trim(),
+      });
+      
+      console.log('[Profile] Profile saved successfully to Firestore');
+      Alert.alert('Success', 'Profile saved successfully!');
+      setIsEditing(false);
+      
+      // Reload profile to verify save
+      await loadProfile();
+    } catch (error) {
+      console.error('[Profile] Error saving profile:', error);
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <ThemedView style={styles.screen}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <TopHeader 
+        title="Profile"
+        right={
+          <Pressable onPress={() => router.replace('/')} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={20} color="#444" />
+          </Pressable>
+        }
+      />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <ThemedText type="title" style={styles.headerTitle}>
-            My Profile
-          </ThemedText>
-          {!isEditing && (
-            <Pressable onPress={() => setIsEditing(true)}>
+          {!isEditing && !isLoading && (
+            <Pressable onPress={() => setIsEditing(true)} style={styles.editButton}>
               <Ionicons name="pencil" size={20} color={accent} />
+              <ThemedText style={[styles.editButtonText, { color: accent }]}>Edit Profile</ThemedText>
             </Pressable>
           )}
         </View>
 
-        <View style={[styles.avatarBox, { backgroundColor: `${accent}20` }]}>
-          <Ionicons name="person-circle" size={80} color={accent} />
-        </View>
-
-        {isEditing ? (
-          <View style={styles.editForm}>
-            <View style={styles.formGroup}>
-              <ThemedText type="defaultSemiBold" style={styles.label}>
-                Full Name
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="Enter your full name"
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <ThemedText type="defaultSemiBold" style={styles.label}>
-                Email
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="Enter your email"
-                keyboardType="email-address"
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <ThemedText type="defaultSemiBold" style={styles.label}>
-                Phone
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="Enter your phone"
-                keyboardType="phone-pad"
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <ThemedText type="defaultSemiBold" style={styles.label}>
-                Age
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={age}
-                onChangeText={setAge}
-                placeholder="Enter your age"
-                keyboardType="number-pad"
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <ThemedText type="defaultSemiBold" style={styles.label}>
-                Blood Type
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={bloodType}
-                onChangeText={setBloodType}
-                placeholder="E.g., O+"
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <ThemedText type="defaultSemiBold" style={styles.label}>
-                Known Allergies
-              </ThemedText>
-              <TextInput
-                style={[styles.input, styles.multilineInput]}
-                value={allergies}
-                onChangeText={setAllergies}
-                placeholder="List any allergies"
-                multiline
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <ThemedText type="defaultSemiBold" style={styles.label}>
-                Emergency Contact
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={emergencyContact}
-                onChangeText={setEmergencyContact}
-                placeholder="Name and phone number"
-              />
-            </View>
-
-            <Pressable
-              style={[styles.button, { backgroundColor: accent }]}
-              onPress={handleSave}
-            >
-              <Ionicons name="checkmark" size={20} color="#fff" />
-              <ThemedText style={styles.buttonText}>Save Profile</ThemedText>
-            </Pressable>
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={accent} />
+            <ThemedText style={styles.loadingText}>Loading profile...</ThemedText>
           </View>
         ) : (
+          <>
+            <View style={[styles.avatarBox, { backgroundColor: `${accent}20` }]}>
+              <Ionicons name="person-circle" size={80} color={accent} />
+            </View>
+
+            {isEditing ? (
+              <View style={styles.editForm}>
+                <View style={styles.formGroup}>
+                  <ThemedText type="defaultSemiBold" style={styles.label}>
+                    Full Name
+                  </ThemedText>
+                  <TextInput
+                    style={styles.input}
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Enter your full name"
+                    editable={!isSaving}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <ThemedText type="defaultSemiBold" style={styles.label}>
+                    Email
+                  </ThemedText>
+                  <TextInput
+                    style={styles.input}
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="Enter your email"
+                    keyboardType="email-address"
+                    editable={!isSaving}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <ThemedText type="defaultSemiBold" style={styles.label}>
+                    Phone
+                  </ThemedText>
+                  <TextInput
+                    style={styles.input}
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="Enter your phone"
+                    keyboardType="phone-pad"
+                    editable={!isSaving}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <ThemedText type="defaultSemiBold" style={styles.label}>
+                    Age
+                  </ThemedText>
+                  <TextInput
+                    style={styles.input}
+                    value={age}
+                    onChangeText={setAge}
+                    placeholder="Enter your age"
+                    keyboardType="number-pad"
+                    editable={!isSaving}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <ThemedText type="defaultSemiBold" style={styles.label}>
+                    Blood Type
+                  </ThemedText>
+                  <TextInput
+                    style={styles.input}
+                    value={bloodType}
+                    onChangeText={setBloodType}
+                    placeholder="E.g., O+"
+                    editable={!isSaving}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <ThemedText type="defaultSemiBold" style={styles.label}>
+                    Known Allergies
+                  </ThemedText>
+                  <TextInput
+                    style={[styles.input, styles.multilineInput]}
+                    value={allergies}
+                    onChangeText={setAllergies}
+                    placeholder="List any allergies"
+                    multiline
+                    editable={!isSaving}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <ThemedText type="defaultSemiBold" style={styles.label}>
+                    Emergency Contact
+                  </ThemedText>
+                  <TextInput
+                    style={styles.input}
+                    value={emergencyContact}
+                    onChangeText={setEmergencyContact}
+                    placeholder="Name and phone number"
+                    editable={!isSaving}
+                  />
+                </View>
+
+                <Pressable
+                  style={[styles.button, { backgroundColor: accent, opacity: isSaving ? 0.6 : 1 }]}
+                  onPress={handleSave}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Ionicons name="checkmark" size={20} color="#fff" />
+                  )}
+                  <ThemedText style={styles.buttonText}>
+                    {isSaving ? 'Saving...' : 'Save Profile'}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            ) : (
           <View style={styles.detailsContainer}>
             <View style={styles.section}>
               <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
@@ -229,21 +339,50 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
         )}
+          </>
+        )}
       </ScrollView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff', paddingTop: 16 },
+  screen: { flex: 1, backgroundColor: '#fff' },
+  content: {
+    paddingTop: 16,
+  },
+  backButton: {
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: '#f0f0f0',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: 16,
     marginBottom: 20,
   },
-  headerTitle: { fontSize: 28, fontWeight: '700' },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#f9f9f9',
+  },
+  editButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: { marginTop: 12, color: '#999' },
   avatarBox: {
     width: 120,
     height: 120,

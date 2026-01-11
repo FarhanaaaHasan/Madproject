@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
+    "dev:all": "concurrently -n backend,frontend -c \"yellow.bold,cyan.bold\" \"npm --prefix backend run dev\" \"npm start\"",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
@@ -28,7 +29,7 @@
     "expo-symbols": "~1.0.7",
     "expo-system-ui": "~6.0.8",
     "expo-web-browser": "~15.0.9",
-    "firebase": "^12.7.0",
+    "@supabase/supabase-js": "^2.38.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -43,6 +44,7 @@
     "@types/react": "~19.1.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "concurrently": "^8.2.2",
     "typescript": "~5.9.2"
   },
   "private": true

@@ -35,7 +35,7 @@ export default function MedicineDetailScreen() {
   const loadMedicineData = async () => {
     if (!id) {
       Alert.alert('Error', 'Medicine ID not found');
-      router.back();
+      router.replace('/medications');
       return;
     }
 
@@ -53,7 +53,7 @@ export default function MedicineDetailScreen() {
         setEditDuration(data.duration);
       } else {
         Alert.alert('Error', 'Medicine not found');
-        router.back();
+        router.replace('/medications');
       }
     } catch (error) {
       console.error('[MedicineDetail] Error loading medicine:', error);
@@ -81,14 +81,19 @@ export default function MedicineDetailScreen() {
         frequency: editFrequency,
         mealTiming: editMealTiming,
         duration: editDuration.trim(),
+        // Keep original values for fields not being edited
+        startDate: medicine.startDate,
+        endDate: medicine.endDate,
+        notificationTimes: medicine.notificationTimes,
       });
 
       Alert.alert('Success', 'Medication updated successfully');
       setIsEditing(false);
-      router.back();
-    } catch (error) {
+      router.replace('/medications');
+    } catch (error: any) {
       console.error('[MedicineDetail] Error updating medicine:', error);
-      Alert.alert('Error', 'Failed to update medication');
+      const msg = error?.message || error?.hint || 'Failed to update medication';
+      Alert.alert('Error', String(msg));
     } finally {
       setIsSaving(false);
     }
@@ -122,7 +127,7 @@ export default function MedicineDetailScreen() {
       setLoading(true);
       await medicationService.deleteMedication(medicine.id);
       Alert.alert('Success', 'Medication deleted successfully');
-      router.back();
+      router.replace('/medications');
     } catch (error) {
       console.error('[MedicineDetail] Error deleting medicine:', error);
       Alert.alert('Error', 'Failed to delete medication');
@@ -185,7 +190,14 @@ export default function MedicineDetailScreen() {
     <ThemedView style={styles.screen}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
+          <Pressable 
+            onPress={() => {
+              console.log('[MedicineDetail] Back button pressed');
+              router.replace('/medications');
+            }} 
+            style={styles.backButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <Ionicons name="chevron-back" size={24} color="#000" />
           </Pressable>
           <ThemedText type="title" style={styles.title}>
@@ -396,7 +408,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  backButton: { padding: 8 },
+  backButton: { padding: 12, marginLeft: -4 },
   title: { fontSize: 24, fontWeight: '700', flex: 1, textAlign: 'center' },
   spacer: { width: 40 },
   iconBox: {

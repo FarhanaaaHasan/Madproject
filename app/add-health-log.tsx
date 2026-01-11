@@ -1,24 +1,83 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { healthLogService } from '@/lib/health-log-service';
 
 export default function AddHealthLogScreen() {
   const accent = useThemeColor({ light: '#f06292', dark: '#f8a2c1' }, 'tint');
   const router = useRouter();
 
-  const [logType, setLogType] = useState<'BP' | 'Glucose' | 'Weight'>('BP');
+  const [logType, setLogType] = useState<'Blood Pressure' | 'Glucose (Fasting)' | 'Weight'>('Blood Pressure');
   const [value, setValue] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [saving, setSaving] = useState(false);
 
-  const handleAdd = () => {
-    if (!value.trim()) return;
-    // Log would be saved to local state or database here
-    router.back();
+  const getUnit = () => {
+    switch (logType) {
+      case 'Blood Pressure':
+        return 'mmHg';
+      case 'Glucose (Fasting)':
+        return 'mg/dL';
+      case 'Weight':
+        return 'kg';
+      default:
+        return '';
+    }
+  };
+
+  const handleAdd = async () => {
+    if (!value.trim()) {
+      Alert.alert('Error', 'Please enter a value');
+      return;
+    }
+
+    if (!date) {
+      Alert.alert('Error', 'Please select a date');
+      return;
+    }
+
+    setSaving(true);
+    console.log('=== Saving Health Log ===');
+    console.log('Log Type:', logType);
+    console.log('Value:', value);
+    console.log('Date:', date);
+    console.log('Unit:', getUnit());
+    
+    try {
+      const { data, error } = await healthLogService.addHealthLog({
+        type: logType,
+        value: value.trim(),
+        unit: getUnit(),
+        date: date,
+      });
+
+      setSaving(false);
+
+      if (error) {
+        console.error('❌ Save failed:', error);
+        Alert.alert('Error', error?.message || 'Failed to save health log. Check console for details.');
+      } else if (data) {
+        console.log('✅ Save successful:', data);
+        Alert.alert('Success', 'Health log saved successfully', [
+          { text: 'OK', onPress: () => {
+            setValue('');
+            router.back();
+          } },
+        ]);
+      } else {
+        console.warn('⚠️ No data returned');
+        Alert.alert('Error', 'No data returned. Try again.');
+      }
+    } catch (err) {
+      setSaving(false);
+      console.error('❌ Exception:', err);
+      Alert.alert('Error', 'An unexpected error occurred. Check console.');
+    }
   };
 
   return (
@@ -44,7 +103,7 @@ export default function AddHealthLogScreen() {
               Log Type
             </ThemedText>
             <View style={styles.typeButtons}>
-              {(['BP', 'Glucose', 'Weight'] as const).map((type) => (
+              {(['Blood Pressure', 'Glucose (Fasting)', 'Weight'] as const).map((type) => (
                 <Pressable
                   key={type}
                   onPress={() => setLogType(type)}
@@ -59,7 +118,7 @@ export default function AddHealthLogScreen() {
                       logType === type && { color: '#fff' },
                     ]}
                   >
-                    {type}
+                    {type === 'Blood Pressure' ? 'BP' : type === 'Glucose (Fasting)' ? 'Glucose' : 'Weight'}
                   </ThemedText>
                 </Pressable>
               ))}
@@ -83,16 +142,16 @@ export default function AddHealthLogScreen() {
 
           <View style={styles.formGroup}>
             <ThemedText type="defaultSemiBold" style={styles.label}>
-              Value {logType === 'BP' && '(e.g., 120/80)'}
-              {logType === 'Glucose' && '(mg/dL)'}
+              Value {logType === 'Blood Pressure' && '(e.g., 120/80)'}
+              {logType === 'Glucose (Fasting)' && '(mg/dL)'}
               {logType === 'Weight' && '(kg)'}
             </ThemedText>
             <View style={styles.inputRow}>
               <Ionicons
                 name={
-                  logType === 'BP'
+                  logType === 'Blood Pressure'
                     ? 'heart-outline'
-                    : logType === 'Glucose'
+                    : logType === 'Glucose (Fasting)'
                       ? 'flask-outline'
                       : 'scale-outline'
                 }
@@ -104,7 +163,7 @@ export default function AddHealthLogScreen() {
                 value={value}
                 onChangeText={setValue}
                 placeholder={
-                  logType === 'BP' ? '120/80' : logType === 'Glucose' ? '110' : '72'
+                  logType === 'Blood Pressure' ? '120/80' : logType === 'Glucose (Fasting)' ? '110' : '72'
                 }
                 keyboardType="decimal-pad"
               />
@@ -114,18 +173,25 @@ export default function AddHealthLogScreen() {
           <View style={styles.infoBox}>
             <Ionicons name="information-circle-outline" size={20} color={accent} />
             <ThemedText style={styles.infoText}>
-              {logType === 'BP' && 'Enter reading as Systolic/Diastolic'}
-              {logType === 'Glucose' && 'Normal fasting glucose: 70-100 mg/dL'}
+              {logType === 'Blood Pressure' && 'Enter reading as Systolic/Diastolic'}
+              {logType === 'Glucose (Fasting)' && 'Normal fasting glucose: 70-100 mg/dL'}
               {logType === 'Weight' && 'Enter your current weight'}
             </ThemedText>
           </View>
 
           <Pressable
-            style={[styles.button, { backgroundColor: accent }]}
+            style={[styles.button, { backgroundColor: accent, opacity: saving ? 0.7 : 1 }]}
             onPress={handleAdd}
+            disabled={saving}
           >
-            <Ionicons name="checkmark" size={20} color="#fff" />
-            <ThemedText style={styles.buttonText}>Save Log Entry</ThemedText>
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="checkmark" size={20} color="#fff" />
+                <ThemedText style={styles.buttonText}>Save Log Entry</ThemedText>
+              </>
+            )}
           </Pressable>
         </View>
       </ScrollView>

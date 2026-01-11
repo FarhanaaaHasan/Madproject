@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TopHeader } from '@/components/top-header';
 import { useAuth } from '@/hooks/use-auth';
 import { useThemeColor } from '@/hooks/use-theme-color';
 
@@ -23,6 +24,8 @@ export default function HomeScreen() {
   return (
     <ThemedView style={styles.screen}>
       <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <TopHeader title="Medexa" />
         {/* Decorative Header */}
         <View style={styles.headerDecoration}>
           <View style={[styles.decorCircle, { top: -20, right: -30, backgroundColor: '#f0629220' }]} />

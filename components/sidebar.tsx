@@ -50,14 +50,14 @@ export default function Sidebar({ onClose }: Props) {
         <Text style={styles.itemText}>Create Reminder</Text>
       </Pressable>
 
-      <Pressable style={styles.item} onPress={() => nav('/health-logs')}>
+      <Pressable style={styles.item} onPress={() => nav('/add-health-log')}>
         <Ionicons name="heart-outline" size={20} color="#333" />
-        <Text style={styles.itemText}>Health Logs</Text>
+        <Text style={styles.itemText}>Add Health Log</Text>
       </Pressable>
 
-      <Pressable style={styles.item} onPress={() => nav('/appointments')}>
+      <Pressable style={styles.item} onPress={() => nav('/add-appointment')}>
         <Ionicons name="calendar-outline" size={20} color="#333" />
-        <Text style={styles.itemText}>Appointments</Text>
+        <Text style={styles.itemText}>Add Appointment</Text>
       </Pressable>
 
       <View style={styles.footer}>

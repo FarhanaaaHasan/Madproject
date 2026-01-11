@@ -5,6 +5,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, TextInput, View } f
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { TopHeader } from '@/components/top-header';
 import { useAuth } from '@/hooks/use-auth';
 import { useMedications } from '@/hooks/use-medications';
 import { useThemeColor } from '@/hooks/use-theme-color';
@@ -37,10 +38,10 @@ export default function MedicationsScreen() {
   // Refresh medications when screen is focused
   useFocusEffect(
     useCallback(() => {
-      if (user?.uid) {
+      if (user?.id) {
         refetch();
       }
-    }, [user?.uid, refetch])
+    }, [user?.id, refetch])
   );
 
   // Convert Firestore medications to display format
@@ -86,36 +87,10 @@ export default function MedicationsScreen() {
 
   return (
     <ThemedView style={styles.screen}>
-      {/* Top Header */}
-      <View style={styles.topHeader}>
-        <Pressable style={styles.menuButton}>
-          <Ionicons name="menu" size={24} color={accent} />
-        </Pressable>
-
-        <View style={styles.headerCenter}>
-          <View style={[styles.headerAvatar, { backgroundColor: accent }]}>
-            <Ionicons name="person" size={18} color="#fff" />
-          </View>
-          <ThemedText type="defaultSemiBold" style={styles.headerName}>
-            {user?.name || user?.email?.split('@')[0] || 'User'}
-          </ThemedText>
-        </View>
-
-        <View style={styles.headerRight}>
-          <Pressable>
-            <Ionicons name="calendar-outline" size={20} color={accent} />
-          </Pressable>
-          <Pressable>
-            <Ionicons name="notifications" size={20} color={accent} />
-          </Pressable>
-        </View>
-      </View>
+      <TopHeader title="My Medications" />
 
       {/* Search Container */}
       <View style={styles.searchSection}>
-        <ThemedText type="defaultSemiBold" style={styles.sectionLabel}>
-          Your medicine
-        </ThemedText>
         <View style={styles.searchContainer}>
           <Ionicons name="search-outline" size={18} color="#999" />
           <TextInput
@@ -164,19 +139,6 @@ export default function MedicationsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, paddingTop: 0, backgroundColor: '#f7fafc' },
-  topHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e8f5f4',
-  },
-  menuButton: {
-    padding: 8,
-  },
   headerCenter: {
     flexDirection: 'row',
     alignItems: 'center',

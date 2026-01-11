@@ -1,47 +1,68 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Slot } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { createContext, useMemo, useState } from 'react';
+import { SafeAreaView, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
 
 import Sidebar from '@/components/sidebar';
+import { AuthProvider } from '@/hooks/use-auth';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Ionicons } from '@expo/vector-icons';
 
 export const unstable_settings = {
   anchor: '(tabs)',
 };
 
-export default function RootLayout() {
+type SidebarContextValue = {
+  toggleSidebar: () => void;
+  closeSidebar: () => void;
+};
+
+export const SidebarContext = createContext<SidebarContextValue>({
+  toggleSidebar: () => {},
+  closeSidebar: () => {},
+});
+
+function RootLayoutContent() {
   const colorScheme = useColorScheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const sidebarValue = useMemo(
+    () => ({
+      toggleSidebar: () => setSidebarOpen((s) => !s),
+      closeSidebar: () => setSidebarOpen(false),
+    }),
+    []
+  );
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <SafeAreaView style={{ flex: 1 }}>
-        <View style={styles.container}>
-          {sidebarOpen && (
-            <View style={styles.sidebarWrapper}>
-              <Sidebar onClose={() => setSidebarOpen(false)} />
-            </View>
-          )}
+        <SidebarContext.Provider value={sidebarValue}>
+          <View style={styles.container}>
+            {sidebarOpen && (
+              <View style={styles.sidebarWrapper}>
+                <Sidebar onClose={() => setSidebarOpen(false)} />
+              </View>
+            )}
 
-          <View style={styles.content}>
-            <View style={styles.topBar}>
-              <Pressable onPress={() => setSidebarOpen((s) => !s)} style={styles.menuButton}>
-                <Ionicons name="menu" size={22} color="#222" />
-              </Pressable>
-              <Text style={styles.appTitle}>Medexa</Text>
+            <View style={styles.content}>
+              <Slot />
             </View>
-
-            <Slot />
           </View>
-        </View>
+        </SidebarContext.Provider>
       </SafeAreaView>
       <StatusBar style="auto" />
     </ThemeProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <RootLayoutContent />
+    </AuthProvider>
   );
 }
 
@@ -49,7 +70,4 @@ const styles = StyleSheet.create({
   container: { flex: 1, flexDirection: 'row' },
   sidebarWrapper: { width: 260, backgroundColor: '#fff', elevation: 2 },
   content: { flex: 1 },
-  topBar: { height: 56, alignItems: 'center', flexDirection: 'row', paddingHorizontal: 12, gap: 12 },
-  menuButton: { padding: 8 },
-  appTitle: { fontSize: 18, fontWeight: '700' },
 });

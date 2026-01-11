@@ -1,17 +1,4 @@
-import { db } from '@/config/firebase';
-import {
-    Timestamp,
-    addDoc,
-    collection,
-    deleteDoc,
-    doc,
-    getDoc,
-    getDocs,
-    orderBy,
-    query,
-    updateDoc,
-    where
-} from 'firebase/firestore';
+import { supabase } from '@/config/supabase';
 
 export interface Medication {
   id?: string;
@@ -23,24 +10,61 @@ export interface Medication {
   frequency: string; // Daily, Weekly, Monthly
   mealTiming: string; // Before/After Breakfast/Lunch/Dinner
   notificationTimes: string[];
+  startDate?: string; // YYYY-MM-DD format
+  endDate?: string; // YYYY-MM-DD format
   createdAt: Date;
   updatedAt: Date;
 }
 
-const COLLECTION_NAME = 'medications';
+const TABLE_NAME = 'medications';
 
 export const medicationService = {
   // Add new medication
   async addMedication(medication: Omit<Medication, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
     try {
-      const now = Timestamp.now();
-      const docRef = await addDoc(collection(db, COLLECTION_NAME), {
-        ...medication,
-        createdAt: now,
-        updatedAt: now,
-      });
-      console.log('[MedicationService] Added medication:', docRef.id);
-      return docRef.id;
+      // Validate required fields match database NOT NULL constraints
+      if (!medication.startDate) {
+        throw new Error('Start date is required');
+      }
+      if (!medication.notificationTimes || medication.notificationTimes.length === 0) {
+        throw new Error('At least one notification time is required');
+      }
+
+      const now = new Date();
+      const insertData = {
+        user_id: medication.userId,
+        name: medication.name,
+        type: medication.type,
+        dosage: medication.dosage,
+        duration: medication.duration || 'Ongoing',
+        frequency: medication.frequency,
+        meal_timing: medication.mealTiming,
+        notification_times: medication.notificationTimes,
+        start_date: medication.startDate,
+        end_date: medication.endDate || null,
+        created_at: now,
+        updated_at: now,
+      };
+
+      console.log('[MedicationService] Inserting medication:', insertData);
+
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .insert([insertData])
+        .select();
+
+      if (error) {
+        console.error('[MedicationService] Supabase error:', error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error('No data returned from insert');
+      }
+
+      const id = data[0].id as string;
+      console.log('[MedicationService] Added medication successfully:', id);
+      return id;
     } catch (error) {
       console.error('[MedicationService] Error adding medication:', error);
       throw error;
@@ -50,24 +74,30 @@ export const medicationService = {
   // Get all medications for a user
   async getUserMedications(userId: string): Promise<Medication[]> {
     try {
-      const q = query(
-        collection(db, COLLECTION_NAME),
-        where('userId', '==', userId),
-        orderBy('createdAt', 'desc')
-      );
-      const querySnapshot = await getDocs(q);
-      const medications: Medication[] = [];
-      
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        medications.push({
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate(),
-          updatedAt: data.updatedAt?.toDate(),
-        } as Medication);
-      });
-      
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const medications: Medication[] = (data || []).map((row: any) => ({
+        id: row.id,
+        userId: row.user_id,
+        name: row.name,
+        type: row.type,
+        dosage: row.dosage,
+        duration: row.duration,
+        frequency: row.frequency,
+        mealTiming: row.meal_timing,
+        notificationTimes: row.notification_times || [],
+        startDate: row.start_date || undefined,
+        endDate: row.end_date || undefined,
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at),
+      }));
+
       console.log('[MedicationService] Retrieved medications:', medications.length);
       return medications;
     } catch (error) {
@@ -79,19 +109,31 @@ export const medicationService = {
   // Get single medication by ID
   async getMedicationById(id: string): Promise<Medication | null> {
     try {
-      const medicationRef = doc(db, COLLECTION_NAME, id);
-      const snap = await getDoc(medicationRef);
-      
-      if (snap.exists()) {
-        const data = snap.data();
-        return {
-          id: snap.id,
-          ...data,
-          createdAt: data.createdAt?.toDate(),
-          updatedAt: data.updatedAt?.toDate(),
-        } as Medication;
-      }
-      return null;
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error && (error as any).code !== 'PGRST116') throw error;
+
+      if (!data) return null;
+
+      return {
+        id: data.id,
+        userId: data.user_id,
+        name: data.name,
+        type: data.type,
+        dosage: data.dosage,
+        duration: data.duration,
+        frequency: data.frequency,
+        mealTiming: data.meal_timing,
+        notificationTimes: data.notification_times || [],
+        startDate: data.start_date || undefined,
+        endDate: data.end_date || undefined,
+        createdAt: new Date(data.created_at),
+        updatedAt: new Date(data.updated_at),
+      } as Medication;
     } catch (error) {
       console.error('[MedicationService] Error getting medication:', error);
       throw error;
@@ -101,11 +143,23 @@ export const medicationService = {
   // Update medication
   async updateMedication(id: string, updates: Partial<Omit<Medication, 'id' | 'userId' | 'createdAt'>>): Promise<void> {
     try {
-      const medicationRef = doc(db, COLLECTION_NAME, id);
-      await updateDoc(medicationRef, {
-        ...updates,
-        updatedAt: Timestamp.now(),
-      });
+      const { error } = await supabase
+        .from(TABLE_NAME)
+        .update({
+          name: updates.name,
+          type: updates.type,
+          dosage: updates.dosage,
+          duration: updates.duration,
+          frequency: updates.frequency,
+          meal_timing: updates.mealTiming,
+          notification_times: updates.notificationTimes,
+          start_date: updates.startDate ?? null,
+          end_date: updates.endDate ?? null,
+          updated_at: new Date(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
       console.log('[MedicationService] Updated medication:', id);
     } catch (error) {
       console.error('[MedicationService] Error updating medication:', error);
@@ -116,8 +170,12 @@ export const medicationService = {
   // Delete medication
   async deleteMedication(id: string): Promise<void> {
     try {
-      const medicationRef = doc(db, COLLECTION_NAME, id);
-      await deleteDoc(medicationRef);
+      const { error } = await supabase
+        .from(TABLE_NAME)
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
       console.log('[MedicationService] Deleted medication:', id);
     } catch (error) {
       console.error('[MedicationService] Error deleting medication:', error);

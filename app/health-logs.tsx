@@ -1,73 +1,125 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Alert, FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useThemeColor } from '@/hooks/use-theme-color';
-
-interface HealthLog {
-  id: string;
-  date: string;
-  type: 'BP' | 'Glucose' | 'Weight';
-  value: string;
-  unit: string;
-}
-
-const MOCK_LOGS: HealthLog[] = [
-  { id: '1', date: '2025-12-16', type: 'BP', value: '120/80', unit: 'mmHg' },
-  { id: '2', date: '2025-12-15', type: 'Glucose', value: '110', unit: 'mg/dL' },
-  { id: '3', date: '2025-12-14', type: 'Weight', value: '72', unit: 'kg' },
-  { id: '4', date: '2025-12-13', type: 'BP', value: '118/76', unit: 'mmHg' },
-];
+import { HealthLog, healthLogService } from '@/lib/health-log-service';
 
 export default function HealthLogsScreen() {
   const accent = useThemeColor({ light: '#f06292', dark: '#f8a2c1' }, 'tint');
   const router = useRouter();
-  const [logs, setLogs] = useState<HealthLog[]>(MOCK_LOGS);
-  const [filterType, setFilterType] = useState<'All' | 'BP' | 'Glucose' | 'Weight'>('All');
+  const [logs, setLogs] = useState<HealthLog[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered =
-    filterType === 'All' ? logs : logs.filter((log) => log.type === filterType);
+  const loadHealthLogs = async () => {
+    setLoading(true);
+    const { data, error } = await healthLogService.getHealthLogs();
+    
+    if (error) {
+      Alert.alert('Error', 'Failed to load health logs');
+      console.error('Error loading health logs:', error);
+    } else if (data) {
+      setLogs(data);
+    }
+    setLoading(false);
+  };
 
-  const handleDelete = (id: string) => {
-    setLogs(logs.filter((log) => log.id !== id));
+  useFocusEffect(
+    useCallback(() => {
+      loadHealthLogs();
+    }, [])
+  );
+
+  const handleDelete = async (id: string) => {
+    Alert.alert(
+      'Delete Health Log',
+      'Are you sure you want to delete this log?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await healthLogService.deleteHealthLog(id);
+            if (error) {
+              Alert.alert('Error', 'Failed to delete health log');
+            } else {
+              setLogs(logs.filter((log) => log.id !== id));
+            }
+          },
+        },
+      ]
+    );
   };
 
   const getIcon = (type: string) => {
     switch (type) {
-      case 'BP':
-        return 'heart-outline';
-      case 'Glucose':
-        return 'flask-outline';
+      case 'Blood Pressure':
+        return 'pulse';
+      case 'Glucose (Fasting)':
+        return 'water';
       case 'Weight':
-        return 'scale-outline';
+        return 'stats-chart';
+      case 'Heart Rate':
+        return 'heart';
       default:
-        return 'pulse-outline';
+        return 'pulse';
     }
   };
 
+  const getBorderColor = (type: string) => {
+    switch (type) {
+      case 'Blood Pressure':
+        return '#d32f2f';
+      case 'Glucose (Fasting)':
+        return '#f57c00';
+      case 'Weight':
+        return '#388e3c';
+      case 'Heart Rate':
+        return '#1976d2';
+      default:
+        return '#999';
+    }
+  };
+
+  const getLatestByType = (type: string) => {
+    return logs.find((log) => log.type === type);
+  };
+
+  const bpLog = getLatestByType('Blood Pressure');
+  const glucoseLog = getLatestByType('Glucose (Fasting)');
+  const weightLog = getLatestByType('Weight');
+
   const renderItem = ({ item }: { item: HealthLog }) => (
-    <View style={styles.logCard}>
-      <View style={[styles.logIcon, { backgroundColor: `${accent}20` }]}>
-        <Ionicons name={getIcon(item.type) as any} size={24} color={accent} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <ThemedText type="defaultSemiBold" style={styles.logType}>
-          {item.type}
+    <View
+      style={[
+        styles.logCard,
+        { borderLeftColor: getBorderColor(item.type), borderLeftWidth: 6 },
+      ]}
+    >
+      <View style={styles.logContent}>
+        <View style={styles.logHeader}>
+          <Ionicons name={getIcon(item.type) as any} size={20} color="#000" />
+          <ThemedText type="defaultSemiBold" style={styles.logType}>
+            {item.type}
+          </ThemedText>
+        </View>
+        <ThemedText style={styles.logValue}>
+          Value: {item.value} {item.unit}
         </ThemedText>
-        <ThemedText style={styles.logDate}>{item.date}</ThemedText>
+        <ThemedText style={styles.logDate}>Date: {item.date}</ThemedText>
       </View>
-      <View style={styles.logValue}>
-        <ThemedText type="defaultSemiBold" style={styles.value}>
-          {item.value}
-        </ThemedText>
-        <ThemedText style={styles.unit}>{item.unit}</ThemedText>
+      <View style={styles.logActions}>
+        <Pressable style={styles.iconButton}>
+          <Ionicons name="pencil-outline" size={18} color="#666" />
+        </Pressable>
+        <Pressable onPress={() => handleDelete(item.id)} style={styles.iconButton}>
+          <Ionicons name="trash-outline" size={18} color="#d9534f" />
+        </Pressable>
       </View>
-      <Pressable onPress={() => handleDelete(item.id)} style={styles.deleteButton}>
-        <Ionicons name="trash-outline" size={18} color="#d9534f" />
-      </Pressable>
     </View>
   );
 
@@ -79,105 +131,146 @@ export default function HealthLogsScreen() {
         </ThemedText>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterScroll}
-      >
-        {['All', 'BP', 'Glucose', 'Weight'].map((type) => (
-          <Pressable
-            key={type}
-            onPress={() => setFilterType(type as any)}
-            style={[
-              styles.filterButton,
-              filterType === type && { backgroundColor: accent },
-            ]}
-          >
-            <ThemedText
-              style={[
-                styles.filterText,
-                filterType === type && { color: '#fff' },
-              ]}
-            >
-              {type}
-            </ThemedText>
-          </Pressable>
-        ))}
-      </ScrollView>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={accent} />
+        </View>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          {/* Summary Cards */}
+          <View style={styles.summaryContainer}>
+            <View style={[styles.summaryCard, styles.pinkCard]}>
+              <ThemedText style={styles.cardLabel}>Blood Pressure</ThemedText>
+              <ThemedText style={styles.cardValue}>{bpLog?.value || 'N/A'}</ThemedText>
+              <ThemedText style={styles.cardUnit}>{bpLog?.unit || 'mmHg'}</ThemedText>
+            </View>
 
-      <FlatList
-        data={filtered}
-        renderItem={renderItem}
-        keyExtractor={(item) => item.id}
-        scrollEnabled={false}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="pulse-outline" size={48} color="#ccc" />
-            <ThemedText style={styles.emptyText}>No health logs found</ThemedText>
+            <View style={[styles.summaryCard, styles.grayCard]}>
+              <ThemedText style={styles.cardLabel}>Glucose</ThemedText>
+              <ThemedText style={styles.cardValue}>{glucoseLog?.value || 'N/A'}</ThemedText>
+              <ThemedText style={styles.cardUnit}>{glucoseLog?.unit || 'mg/dL'}</ThemedText>
+            </View>
+
+            <View style={[styles.summaryCard, styles.pinkCard]}>
+              <ThemedText style={styles.cardLabel}>Weight</ThemedText>
+              <ThemedText style={styles.cardValue}>{weightLog?.value || 'N/A'}</ThemedText>
+              <ThemedText style={styles.cardUnit}>{weightLog?.unit || 'kg'}</ThemedText>
+            </View>
+
+            <View style={[styles.summaryCard, styles.grayCard]}>
+              <ThemedText style={styles.cardLabel}>Total Logs</ThemedText>
+              <ThemedText style={styles.cardValue}>{logs.length}</ThemedText>
+            </View>
           </View>
-        }
-        contentContainerStyle={styles.list}
-      />
 
-      <Pressable
-        style={[styles.fab, { backgroundColor: accent }]}
-        onPress={() => router.push('/add-health-log')}
-      >
-        <Ionicons name="add" size={28} color="#fff" />
-      </Pressable>
+        {/* Add Button */}
+        <Pressable
+          style={[styles.addButton, { backgroundColor: accent }]}
+          onPress={() => router.push('/add-health-log')}
+        >
+          <Ionicons name="add" size={20} color="#fff" />
+          <ThemedText style={styles.addButtonText}>Add Health Log</ThemedText>
+        </Pressable>
+
+        {/* Logs List */}
+        <FlatList
+          data={logs}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id}
+          scrollEnabled={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Ionicons name="pulse-outline" size={48} color="#ccc" />
+              <ThemedText style={styles.emptyText}>No health logs found</ThemedText>
+            </View>
+          }
+          contentContainerStyle={styles.list}
+        />
+        </ScrollView>
+      )}
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff', paddingTop: 16 },
-  header: { paddingHorizontal: 16, marginBottom: 16 },
+  screen: { flex: 1, backgroundColor: '#e8dce5' },
+  header: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
   headerTitle: { fontSize: 28, fontWeight: '700' },
-  filterScroll: { gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
-  filterButton: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#f0f0f0',
+  scrollContent: { paddingHorizontal: 16, paddingBottom: 20 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  filterText: { fontWeight: '600', fontSize: 14 },
-  list: { gap: 10, paddingHorizontal: 16, paddingBottom: 80 },
+
+  // Summary Cards
+  summaryContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  summaryCard: {
+    width: '48%',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'flex-start',
+  },
+  pinkCard: {
+    backgroundColor: '#d4b5c8',
+  },
+  grayCard: {
+    backgroundColor: '#c5c5c5',
+  },
+  cardLabel: { fontSize: 11, color: '#8b5a7a', marginBottom: 8, fontWeight: '600' },
+  cardValue: { fontSize: 22, fontWeight: '700', color: '#000' },
+  cardUnit: { fontSize: 11, color: '#000', marginTop: 2 },
+
+  // Add Button
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginBottom: 16,
+  },
+  addButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+
+  // Logs List
+  list: { gap: 12, paddingBottom: 20 },
   logCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#f9f9f9',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 12,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  logIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
+  logContent: { flex: 1 },
+  logHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 6,
   },
-  logType: { fontSize: 16, marginBottom: 4 },
+  logType: { fontSize: 16, color: '#000' },
+  logValue: { fontSize: 13, color: '#666', marginBottom: 2 },
   logDate: { fontSize: 12, color: '#999' },
-  logValue: { alignItems: 'flex-end', marginRight: 8 },
-  value: { fontSize: 16 },
-  unit: { fontSize: 11, color: '#999' },
-  deleteButton: { padding: 4 },
+  logActions: { flexDirection: 'row', gap: 12 },
+  iconButton: { padding: 4 },
+
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 60,
   },
   emptyText: { marginTop: 12, color: '#999' },
-  fab: {
-    position: 'absolute',
-    bottom: 16,
-    right: 16,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 5,
-  },
 });

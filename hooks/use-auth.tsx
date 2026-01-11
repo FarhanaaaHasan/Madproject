@@ -1,14 +1,7 @@
-import { auth } from '@/config/firebase';
-import {
-  createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  updateProfile,
-} from 'firebase/auth';
+import { supabase } from '@/config/supabase';
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 
-type User = { uid: string; email: string | null; name?: string | null };
+type User = { id: string; email: string | null; name?: string | null };
 
 type AuthContextValue = {
   user: User | null;
@@ -27,39 +20,56 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // Listen to auth state changes
   useEffect(() => {
     console.log('[use-auth] Setting up auth listener');
-    const unsubscribe = onAuthStateChanged(
-      auth, 
-      (firebaseUser) => {
-        console.log('[use-auth] Auth state changed:', firebaseUser ? 'User logged in' : 'No user');
-        if (firebaseUser) {
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: firebaseUser.displayName,
-          });
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      },
-      (error) => {
-        console.error('[use-auth] Auth state error:', error);
-        setLoading(false);
+    
+    // Check current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.user_metadata?.name,
+        });
       }
-    );
+      setLoading(false);
+    });
 
-    return () => unsubscribe();
+    // Subscribe to auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('[use-auth] Auth state changed:', session?.user ? 'User logged in' : 'No user');
+      if (session?.user) {
+        setUser({
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.user_metadata?.name,
+        });
+      } else {
+        setUser(null);
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
   const signIn = async ({ email, password }: { email: string; password: string }) => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const firebaseUser = userCredential.user;
-      setUser({
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        name: firebaseUser.displayName,
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
+      
+      if (error) throw error;
+      
+      if (data.user) {
+        setUser({
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.user_metadata?.name,
+        });
+      }
     } catch (error: any) {
       console.error('Sign in error:', error);
       throw error;
@@ -68,20 +78,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const signUp = async ({ email, password, name }: { email: string; password: string; name?: string }) => {
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const firebaseUser = userCredential.user;
-
-      // Update profile with display name if provided
-      if (name) {
-        await updateProfile(firebaseUser, { displayName: name });
-      }
-
-      // Update local state
-      setUser({
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        name: name || null,
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name: name || '',
+          },
+        },
       });
+      
+      if (error) throw error;
+      
+      if (data.user) {
+        setUser({
+          id: data.user.id,
+          email: data.user.email,
+          name: name || null,
+        });
+      }
       console.log('[use-auth] User registered:', { email, name });
     } catch (error: any) {
       console.error('Sign up error:', error);
@@ -91,7 +106,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const signOut = async () => {
     try {
-      await firebaseSignOut(auth);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       setUser(null);
     } catch (error: any) {
       console.error('Sign out error:', error);
